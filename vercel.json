@@ -3,16 +3,5 @@
     "src/app/api/**/*.ts": {
       "maxDuration": 60
     }
-  },
-  "env": {
-    "DATABASE_URL": "@database-url",
-    "NEXTAUTH_URL": "@nextauth-url",
-    "NEXTAUTH_SECRET": "@nextauth-secret",
-    "CLOUDFLARE_STREAM_API_TOKEN": "@cloudflare-stream-api-token",
-    "CLOUDFLARE_GLOBAL_API_KEY": "@cloudflare-global-api-key",
-    "CLOUDFLARE_EMAIL": "@cloudflare-email",
-    "CLOUDFLARE_ACCOUNT_ID": "@cloudflare-account-id",
-    "CLOUDFLARE_STREAM_ENDPOINT": "@cloudflare-stream-endpoint",
-    "CLOUDFLARE_CUSTOMER_SUBDOMAIN": "@cloudflare-customer-subdomain"
   }
 }
