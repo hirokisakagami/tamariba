@@ -1,0 +1,20 @@
+name = "video-admin"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+pages_build_output_dir = ".next"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "video-admin-db"
+database_id = "915e527a-b92f-4909-91a8-494cf9b5fa4d"
+
+[env.production.vars]
+NEXTAUTH_URL = "https://your-domain.pages.dev"
+NEXTAUTH_SECRET = "your-secret-here"
+CLOUDFLARE_STREAM_API_TOKEN = "ftmAfnR_gBQCcGe5nfTgB_iYCBj0zmohZyhHQ8_4"
+CLOUDFLARE_GLOBAL_API_KEY = "f2920d0e0cda198766a8831df12d82ef9d381"
+CLOUDFLARE_EMAIL = "forallofyou06@gmail.com"
+CLOUDFLARE_ACCOUNT_ID = "11819e309f3bda41e3c4da6095548018"
+CLOUDFLARE_STREAM_ENDPOINT = "https://api.cloudflare.com/client/v4/accounts"
+CLOUDFLARE_CUSTOMER_SUBDOMAIN = "customer-tuyd0caye2jufpak.cloudflarestream.com"
