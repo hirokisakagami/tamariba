@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
-import { prisma } from '@/lib/prisma'
+import { createUser, getUserByEmail, createSection } from '@/lib/d1'
 
 export async function POST(request: NextRequest) {
   try {
@@ -20,9 +20,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const existingUser = await prisma.user.findUnique({
-      where: { email },
-    })
+    const existingUser = await getUserByEmail(email)
 
     if (existingUser) {
       return NextResponse.json(
@@ -33,49 +31,39 @@ export async function POST(request: NextRequest) {
 
     const hashedPassword = await bcrypt.hash(password, 12)
 
-    const user = await prisma.user.create({
-      data: {
-        name,
-        email,
-        password: hashedPassword,
-      },
-    })
+    const userId = await createUser(email, hashedPassword, name)
 
     const defaultSections = [
       {
         title: 'フィーチャー',
         slug: 'featured',
         description: '大きなサムネイルで表示される注目コンテンツ',
-        order: 0,
       },
       {
         title: 'あなたにおすすめ',
         slug: 'for_you',
         description: 'ユーザーにおすすめの動画',
-        order: 1,
       },
       {
         title: 'トレンド',
         slug: 'trending',
         description: '話題の動画',
-        order: 2,
       },
       {
         title: 'コミュニティで人気',
         slug: 'community_popular',
         description: 'コミュニティで人気の動画',
-        order: 3,
       },
     ]
 
-    await prisma.section.createMany({
-      data: defaultSections.map(section => ({
+    for (const section of defaultSections) {
+      await createSection({
         ...section,
-        userId: user.id,
-      })),
-    })
+        userId,
+      })
+    }
 
-    const { password: _, ...userWithoutPassword } = user
+    const userWithoutPassword = { id: userId, name, email }
 
     return NextResponse.json(userWithoutPassword)
   } catch (error) {

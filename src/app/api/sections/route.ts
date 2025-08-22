@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { prisma } from '@/lib/prisma'
+import { getSectionsByUserId, createSection, getD1Database } from '@/lib/d1'
 
 export async function GET() {
   try {
@@ -10,18 +10,7 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const sections = await prisma.section.findMany({
-      where: { userId: session.user.id },
-      orderBy: { order: 'asc' },
-      include: {
-        items: {
-          orderBy: { order: 'asc' },
-          include: {
-            video: true
-          }
-        }
-      }
-    })
+    const sections = await getSectionsByUserId(session.user.id)
 
     return NextResponse.json(sections)
   } catch (error) {
@@ -49,9 +38,9 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const existingSection = await prisma.section.findUnique({
-      where: { slug }
-    })
+    const db = getD1Database()
+    const existingStmt = db.prepare('SELECT * FROM Section WHERE slug = ?')
+    const existingSection = await existingStmt.bind(slug).first()
 
     if (existingSection) {
       return NextResponse.json(
@@ -60,21 +49,14 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const maxOrder = await prisma.section.findFirst({
-      where: { userId: session.user.id },
-      orderBy: { order: 'desc' },
-      select: { order: true }
+    const sectionId = await createSection({
+      title,
+      slug,
+      description,
+      userId: session.user.id,
     })
 
-    const section = await prisma.section.create({
-      data: {
-        title,
-        slug,
-        description,
-        order: (maxOrder?.order || 0) + 1,
-        userId: session.user.id,
-      },
-    })
+    const section = { id: sectionId, title, slug, description }
 
     return NextResponse.json(section)
   } catch (error) {

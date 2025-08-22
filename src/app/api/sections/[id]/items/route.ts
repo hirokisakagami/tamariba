@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { prisma } from '@/lib/prisma'
+import { addVideoToSection, updateSectionItems, getD1Database } from '@/lib/d1'
 
 export async function POST(
   request: NextRequest,
@@ -23,12 +23,10 @@ export async function POST(
       )
     }
 
-    const section = await prisma.section.findFirst({
-      where: {
-        id: resolvedParams.id,
-        userId: session.user.id,
-      },
-    })
+    const db = getD1Database()
+    
+    const sectionStmt = db.prepare('SELECT * FROM Section WHERE id = ? AND userId = ?')
+    const section = await sectionStmt.bind(resolvedParams.id, session.user.id).first()
 
     if (!section) {
       return NextResponse.json(
@@ -37,12 +35,8 @@ export async function POST(
       )
     }
 
-    const video = await prisma.video.findFirst({
-      where: {
-        id: videoId,
-        userId: session.user.id,
-      },
-    })
+    const videoStmt = db.prepare('SELECT * FROM Video WHERE id = ? AND userId = ?')
+    const video = await videoStmt.bind(videoId, session.user.id).first()
 
     if (!video) {
       return NextResponse.json(
@@ -51,14 +45,8 @@ export async function POST(
       )
     }
 
-    const existingItem = await prisma.sectionItem.findUnique({
-      where: {
-        sectionId_videoId: {
-          sectionId: resolvedParams.id,
-          videoId: videoId,
-        },
-      },
-    })
+    const existingStmt = db.prepare('SELECT * FROM SectionItem WHERE sectionId = ? AND videoId = ?')
+    const existingItem = await existingStmt.bind(resolvedParams.id, videoId).first()
 
     if (existingItem) {
       return NextResponse.json(
@@ -67,24 +55,9 @@ export async function POST(
       )
     }
 
-    const maxOrder = await prisma.sectionItem.findFirst({
-      where: { sectionId: resolvedParams.id },
-      orderBy: { order: 'desc' },
-      select: { order: true }
-    })
+    const itemId = await addVideoToSection(resolvedParams.id, videoId, isFeatured)
 
-    const sectionItem = await prisma.sectionItem.create({
-      data: {
-        sectionId: resolvedParams.id,
-        videoId: videoId,
-        order: (maxOrder?.order || 0) + 1,
-        isFeatured,
-      },
-      include: {
-        video: true,
-        section: true,
-      },
-    })
+    const sectionItem = { id: itemId, sectionId: resolvedParams.id, videoId, isFeatured }
 
     return NextResponse.json(sectionItem)
   } catch (error) {
@@ -116,12 +89,10 @@ export async function PUT(
       )
     }
 
-    const section = await prisma.section.findFirst({
-      where: {
-        id: resolvedParams.id,
-        userId: session.user.id,
-      },
-    })
+    const db = getD1Database()
+    
+    const sectionStmt = db.prepare('SELECT * FROM Section WHERE id = ? AND userId = ?')
+    const section = await sectionStmt.bind(resolvedParams.id, session.user.id).first()
 
     if (!section) {
       return NextResponse.json(
@@ -130,20 +101,21 @@ export async function PUT(
       )
     }
 
-    const updatePromises = items.map((item: { id: string; isFeatured?: boolean }, index: number) =>
-      prisma.sectionItem.update({
-        where: { id: item.id },
-        data: { order: index, isFeatured: item.isFeatured || false },
-      })
-    )
+    await updateSectionItems(resolvedParams.id, items.map((item: { id: string; isFeatured?: boolean }, index: number) => ({
+      id: item.id,
+      order: index,
+      isFeatured: item.isFeatured || false
+    })))
 
-    await Promise.all(updatePromises)
-
-    const updatedItems = await prisma.sectionItem.findMany({
-      where: { sectionId: resolvedParams.id },
-      orderBy: { order: 'asc' },
-      include: { video: true },
-    })
+    const updatedItemsStmt = db.prepare(`
+      SELECT si.*, v.title, v.cloudflareVideoId, v.thumbnailUrl
+      FROM SectionItem si
+      JOIN Video v ON si.videoId = v.id
+      WHERE si.sectionId = ?
+      ORDER BY si."order" ASC
+    `)
+    const result = await updatedItemsStmt.bind(resolvedParams.id).all()
+    const updatedItems = result.results
 
     return NextResponse.json(updatedItems)
   } catch (error) {

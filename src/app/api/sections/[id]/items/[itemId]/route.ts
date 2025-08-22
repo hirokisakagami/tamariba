@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { prisma } from '@/lib/prisma'
+import { deleteSectionItem, getD1Database } from '@/lib/d1'
 
 export async function DELETE(
   request: NextRequest,
@@ -15,12 +15,10 @@ export async function DELETE(
 
     const resolvedParams = await params
 
-    const section = await prisma.section.findFirst({
-      where: {
-        id: resolvedParams.id,
-        userId: session.user.id,
-      },
-    })
+    const db = getD1Database()
+    
+    const sectionStmt = db.prepare('SELECT * FROM Section WHERE id = ? AND userId = ?')
+    const section = await sectionStmt.bind(resolvedParams.id, session.user.id).first()
 
     if (!section) {
       return NextResponse.json(
@@ -29,12 +27,7 @@ export async function DELETE(
       )
     }
 
-    await prisma.sectionItem.delete({
-      where: {
-        id: resolvedParams.itemId,
-        sectionId: resolvedParams.id,
-      },
-    })
+    await deleteSectionItem(resolvedParams.itemId, resolvedParams.id)
 
     return NextResponse.json({ success: true })
   } catch (error) {

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { prisma } from '@/lib/prisma'
+import { getVideosByUserId, createVideo } from '@/lib/d1'
 import { uploadVideoToStream, getThumbnailUrl } from '@/lib/cloudflare'
 
 export async function GET() {
@@ -11,18 +11,7 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const videos = await prisma.video.findMany({
-      where: { userId: session.user.id },
-      orderBy: { createdAt: 'desc' },
-      include: {
-        user: { select: { name: true, email: true } },
-        sectionItems: {
-          include: {
-            section: { select: { title: true, slug: true } }
-          }
-        }
-      }
-    })
+    const videos = await getVideosByUserId(session.user.id)
 
     return NextResponse.json(videos)
   } catch (error) {
@@ -52,17 +41,16 @@ export async function POST(request: NextRequest) {
 
     const cloudflareVideo = await uploadVideoToStream(file, title)
 
-    const video = await prisma.video.create({
-      data: {
-        title: title || file.name,
-        description: description || null,
-        cloudflareVideoId: cloudflareVideo.uid,
-        thumbnailUrl: getThumbnailUrl(cloudflareVideo.uid),
-        duration: cloudflareVideo.duration || null,
-        status: 'PROCESSING',
-        userId: session.user.id,
-      },
+    const videoId = await createVideo({
+      title: title || file.name,
+      description: description || undefined,
+      cloudflareVideoId: cloudflareVideo.uid,
+      thumbnailUrl: getThumbnailUrl(cloudflareVideo.uid),
+      duration: cloudflareVideo.duration || undefined,
+      userId: session.user.id,
     })
+
+    const video = { id: videoId, title: title || file.name, cloudflareVideoId: cloudflareVideo.uid }
 
     return NextResponse.json(video)
   } catch (error) {

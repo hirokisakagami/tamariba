@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { prisma } from '@/lib/prisma'
+import { deleteVideo, updateVideo, getD1Database } from '@/lib/d1'
 import { deleteStreamVideo } from '@/lib/cloudflare'
 
 export async function DELETE(
@@ -16,12 +16,9 @@ export async function DELETE(
 
     const resolvedParams = await params
 
-    const video = await prisma.video.findFirst({
-      where: {
-        id: resolvedParams.id,
-        userId: session.user.id,
-      },
-    })
+    const db = getD1Database()
+    const videoStmt = db.prepare('SELECT * FROM Video WHERE id = ? AND userId = ?')
+    const video = await videoStmt.bind(resolvedParams.id, session.user.id).first() as any
 
     if (!video) {
       return NextResponse.json({ error: 'Video not found' }, { status: 404 })
@@ -29,9 +26,7 @@ export async function DELETE(
 
     await deleteStreamVideo(video.cloudflareVideoId)
 
-    await prisma.video.delete({
-      where: { id: resolvedParams.id },
-    })
+    await deleteVideo(resolvedParams.id, session.user.id)
 
     return NextResponse.json({ success: true })
   } catch (error) {
@@ -56,17 +51,13 @@ export async function PUT(
     const resolvedParams = await params
     const { title, description, status } = await request.json()
 
-    const video = await prisma.video.update({
-      where: {
-        id: resolvedParams.id,
-        userId: session.user.id,
-      },
-      data: {
-        ...(title !== undefined && { title }),
-        ...(description !== undefined && { description }),
-        ...(status !== undefined && { status }),
-      },
+    await updateVideo(resolvedParams.id, session.user.id, {
+      ...(title !== undefined && { title }),
+      ...(description !== undefined && { description }),
+      ...(status !== undefined && { status }),
     })
+
+    const video = { id: resolvedParams.id, title, description, status }
 
     return NextResponse.json(video)
   } catch (error) {
