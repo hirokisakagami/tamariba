@@ -17,8 +17,8 @@ export async function DELETE(
     const resolvedParams = await params
 
     const db = getD1Database()
-    const videoResult = await db.query('SELECT * FROM Video WHERE id = ? AND userId = ?', [resolvedParams.id, session.user.id])
-    const video = videoResult.results[0] as any
+    const videoStmt = db.prepare('SELECT * FROM Video WHERE id = ? AND userId = ?')
+    const video = await videoStmt.bind(resolvedParams.id, session.user.id).first() as any
 
     if (!video) {
       return NextResponse.json({ error: 'Video not found' }, { status: 404 })

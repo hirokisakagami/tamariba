@@ -1,6 +1,25 @@
-// Cloudflare D1 REST API client for Vercel compatibility
+// Cloudflare D1 client compatible with prepare/bind/first API
 
-class D1RestClient {
+interface D1PreparedStatement {
+  bind(...values: unknown[]): D1PreparedStatement
+  first<T = unknown>(colName?: string): Promise<T | null>
+  run(): Promise<D1Result>
+  all<T = unknown>(): Promise<D1Result<T>>
+  raw<T = unknown>(): Promise<T[]>
+}
+
+interface D1Result<T = unknown> {
+  results: T[]
+  success: boolean
+  meta: {
+    duration: number
+    size_after: number
+    rows_read: number
+    rows_written: number
+  }
+}
+
+class D1HttpClient {
   private apiUrl: string
   private headers: Record<string, string>
 
@@ -32,14 +51,67 @@ class D1RestClient {
     }
   }
 
-  async query(sql: string, params: any[] = []) {
+  prepare(sql: string): D1PreparedStatement {
+    return new D1HttpPreparedStatement(sql, this.apiUrl, this.headers)
+  }
+
+  async exec(sql: string) {
+    return this.prepare(sql).run()
+  }
+
+  async batch(statements: D1PreparedStatement[]) {
+    // Execute sequentially for HTTP API
+    const results = []
+    for (const stmt of statements) {
+      results.push(await stmt.run())
+    }
+    return results
+  }
+}
+
+class D1HttpPreparedStatement implements D1PreparedStatement {
+  private sql: string
+  private params: unknown[] = []
+  private apiUrl: string
+  private headers: Record<string, string>
+
+  constructor(sql: string, apiUrl: string, headers: Record<string, string>) {
+    this.sql = sql
+    this.apiUrl = apiUrl
+    this.headers = headers
+  }
+
+  bind(...values: unknown[]): D1PreparedStatement {
+    this.params = values
+    return this
+  }
+
+  async first<T = unknown>(colName?: string): Promise<T | null> {
+    const result = await this.execute()
+    return result.results[0] || null
+  }
+
+  async run(): Promise<D1Result> {
+    return this.execute()
+  }
+
+  async all<T = unknown>(): Promise<D1Result<T>> {
+    return this.execute<T>()
+  }
+
+  async raw<T = unknown>(): Promise<T[]> {
+    const result = await this.execute<T>()
+    return result.results
+  }
+
+  private async execute<T = unknown>(): Promise<D1Result<T>> {
     try {
       const response = await fetch(this.apiUrl, {
         method: 'POST',
         headers: this.headers,
         body: JSON.stringify({
-          sql,
-          params,
+          sql: this.sql,
+          params: this.params,
         }),
       })
 
@@ -62,7 +134,13 @@ class D1RestClient {
 
 // Get D1 database instance
 export function getD1Database() {
-  return new D1RestClient()
+  // In Cloudflare Workers/Pages environment
+  if (typeof (globalThis as any).DB !== 'undefined') {
+    return (globalThis as any).DB
+  }
+  
+  // For Vercel/Node.js environment
+  return new D1HttpClient()
 }
 
 // User management functions
@@ -70,25 +148,25 @@ export async function createUser(email: string, password: string, name: string, 
   const db = getD1Database()
   const userId = generateId()
   
-  const sql = `
+  const stmt = db.prepare(`
     INSERT INTO User (id, email, password, name, role, createdAt, updatedAt)
     VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))
-  `
+  `)
   
-  await db.query(sql, [userId, email, password, name, role])
+  await stmt.bind(userId, email, password, name, role).run()
   return userId
 }
 
 export async function getUserByEmail(email: string) {
   const db = getD1Database()
-  const result = await db.query('SELECT * FROM User WHERE email = ?', [email])
-  return result.results[0] || null
+  const stmt = db.prepare('SELECT * FROM User WHERE email = ?')
+  return await stmt.bind(email).first()
 }
 
 export async function getUserById(id: string) {
   const db = getD1Database()
-  const result = await db.query('SELECT * FROM User WHERE id = ?', [id])
-  return result.results[0] || null
+  const stmt = db.prepare('SELECT * FROM User WHERE id = ?')
+  return await stmt.bind(id).first()
 }
 
 // Video management functions
@@ -103,12 +181,12 @@ export async function createVideo(data: {
   const db = getD1Database()
   const videoId = generateId()
   
-  const sql = `
+  const stmt = db.prepare(`
     INSERT INTO Video (id, title, description, cloudflareVideoId, thumbnailUrl, duration, status, createdAt, updatedAt, userId)
     VALUES (?, ?, ?, ?, ?, ?, 'PROCESSING', datetime('now'), datetime('now'), ?)
-  `
+  `)
   
-  await db.query(sql, [
+  await stmt.bind(
     videoId,
     data.title,
     data.description || null,
@@ -116,20 +194,22 @@ export async function createVideo(data: {
     data.thumbnailUrl || null,
     data.duration || null,
     data.userId
-  ])
+  ).run()
   
   return videoId
 }
 
 export async function getVideosByUserId(userId: string) {
   const db = getD1Database()
-  const result = await db.query('SELECT * FROM Video WHERE userId = ? ORDER BY createdAt DESC', [userId])
+  const stmt = db.prepare('SELECT * FROM Video WHERE userId = ? ORDER BY createdAt DESC')
+  const result = await stmt.bind(userId).all()
   return result.results
 }
 
 export async function deleteVideo(id: string, userId: string) {
   const db = getD1Database()
-  return await db.query('DELETE FROM Video WHERE id = ? AND userId = ?', [id, userId])
+  const stmt = db.prepare('DELETE FROM Video WHERE id = ? AND userId = ?')
+  return await stmt.bind(id, userId).run()
 }
 
 export async function updateVideo(id: string, userId: string, data: Partial<{
@@ -158,8 +238,8 @@ export async function updateVideo(id: string, userId: string, data: Partial<{
   updates.push('updatedAt = datetime("now")')
   values.push(id, userId)
   
-  const sql = `UPDATE Video SET ${updates.join(', ')} WHERE id = ? AND userId = ?`
-  return await db.query(sql, values)
+  const stmt = db.prepare(`UPDATE Video SET ${updates.join(', ')} WHERE id = ? AND userId = ?`)
+  return await stmt.bind(...values).run()
 }
 
 // Section management functions
