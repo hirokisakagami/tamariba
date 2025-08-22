@@ -1,44 +1,68 @@
-// Cloudflare D1 direct connection library
+// Cloudflare D1 REST API client for Vercel compatibility
 
-export interface D1Database {
-  prepare(query: string): D1PreparedStatement
-  exec(query: string): Promise<D1ExecResult>
-  batch(statements: D1PreparedStatement[]): Promise<D1Result[]>
-}
+class D1RestClient {
+  private apiUrl: string
+  private headers: Record<string, string>
 
-export interface D1PreparedStatement {
-  bind(...values: unknown[]): D1PreparedStatement
-  first<T = unknown>(colName?: string): Promise<T | null>
-  run(): Promise<D1Result>
-  all<T = unknown>(): Promise<D1Result<T>>
-  raw<T = unknown>(): Promise<T[]>
-}
+  constructor() {
+    const accountId = process.env.CLOUDFLARE_ACCOUNT_ID
+    const databaseId = process.env.CLOUDFLARE_D1_DATABASE_ID
+    const apiToken = process.env.CLOUDFLARE_API_TOKEN
+    const email = process.env.CLOUDFLARE_EMAIL
 
-export interface D1Result<T = unknown> {
-  results: T[]
-  success: boolean
-  meta: {
-    duration: number
-    size_after: number
-    rows_read: number
-    rows_written: number
+    if (!accountId || !databaseId || !apiToken) {
+      throw new Error('Missing required Cloudflare environment variables')
+    }
+
+    this.apiUrl = `https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${databaseId}/query`
+    
+    if (email) {
+      // Global API Key
+      this.headers = {
+        'Content-Type': 'application/json',
+        'X-Auth-Email': email,
+        'X-Auth-Key': apiToken,
+      }
+    } else {
+      // API Token
+      this.headers = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiToken}`,
+      }
+    }
   }
-}
 
-export interface D1ExecResult {
-  count: number
-  duration: number
+  async query(sql: string, params: any[] = []) {
+    try {
+      const response = await fetch(this.apiUrl, {
+        method: 'POST',
+        headers: this.headers,
+        body: JSON.stringify({
+          sql,
+          params,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error(`D1 API error: ${response.status} ${response.statusText}`)
+      }
+
+      const data = await response.json()
+      if (!data.success) {
+        throw new Error(`D1 query failed: ${JSON.stringify(data.errors)}`)
+      }
+
+      return data.result[0]
+    } catch (error) {
+      console.error('D1 query error:', error)
+      throw error
+    }
+  }
 }
 
 // Get D1 database instance
-export function getD1Database(): D1Database {
-  // In production (Cloudflare Workers/Pages)
-  if (typeof (globalThis as any).DB !== 'undefined') {
-    return (globalThis as any).DB
-  }
-  
-  // For local development, we'll use a mock or wrangler
-  throw new Error('D1 database not available. Make sure you are running in Cloudflare Workers/Pages environment.')
+export function getD1Database() {
+  return new D1RestClient()
 }
 
 // User management functions
@@ -46,25 +70,25 @@ export async function createUser(email: string, password: string, name: string, 
   const db = getD1Database()
   const userId = generateId()
   
-  const stmt = db.prepare(`
+  const sql = `
     INSERT INTO User (id, email, password, name, role, createdAt, updatedAt)
     VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))
-  `)
+  `
   
-  await stmt.bind(userId, email, password, name, role).run()
+  await db.query(sql, [userId, email, password, name, role])
   return userId
 }
 
 export async function getUserByEmail(email: string) {
   const db = getD1Database()
-  const stmt = db.prepare('SELECT * FROM User WHERE email = ?')
-  return await stmt.bind(email).first()
+  const result = await db.query('SELECT * FROM User WHERE email = ?', [email])
+  return result.results[0] || null
 }
 
 export async function getUserById(id: string) {
   const db = getD1Database()
-  const stmt = db.prepare('SELECT * FROM User WHERE id = ?')
-  return await stmt.bind(id).first()
+  const result = await db.query('SELECT * FROM User WHERE id = ?', [id])
+  return result.results[0] || null
 }
 
 // Video management functions
@@ -79,12 +103,12 @@ export async function createVideo(data: {
   const db = getD1Database()
   const videoId = generateId()
   
-  const stmt = db.prepare(`
+  const sql = `
     INSERT INTO Video (id, title, description, cloudflareVideoId, thumbnailUrl, duration, status, createdAt, updatedAt, userId)
     VALUES (?, ?, ?, ?, ?, ?, 'PROCESSING', datetime('now'), datetime('now'), ?)
-  `)
+  `
   
-  await stmt.bind(
+  await db.query(sql, [
     videoId,
     data.title,
     data.description || null,
@@ -92,22 +116,20 @@ export async function createVideo(data: {
     data.thumbnailUrl || null,
     data.duration || null,
     data.userId
-  ).run()
+  ])
   
   return videoId
 }
 
 export async function getVideosByUserId(userId: string) {
   const db = getD1Database()
-  const stmt = db.prepare('SELECT * FROM Video WHERE userId = ? ORDER BY createdAt DESC')
-  const result = await stmt.bind(userId).all()
+  const result = await db.query('SELECT * FROM Video WHERE userId = ? ORDER BY createdAt DESC', [userId])
   return result.results
 }
 
 export async function deleteVideo(id: string, userId: string) {
   const db = getD1Database()
-  const stmt = db.prepare('DELETE FROM Video WHERE id = ? AND userId = ?')
-  return await stmt.bind(id, userId).run()
+  return await db.query('DELETE FROM Video WHERE id = ? AND userId = ?', [id, userId])
 }
 
 export async function updateVideo(id: string, userId: string, data: Partial<{
@@ -136,14 +158,14 @@ export async function updateVideo(id: string, userId: string, data: Partial<{
   updates.push('updatedAt = datetime("now")')
   values.push(id, userId)
   
-  const stmt = db.prepare(`UPDATE Video SET ${updates.join(', ')} WHERE id = ? AND userId = ?`)
-  return await stmt.bind(...values).run()
+  const sql = `UPDATE Video SET ${updates.join(', ')} WHERE id = ? AND userId = ?`
+  return await db.query(sql, values)
 }
 
 // Section management functions
 export async function getSectionsByUserId(userId: string) {
   const db = getD1Database()
-  const stmt = db.prepare(`
+  const sql = `
     SELECT s.*, 
            si.id as item_id, si.order as item_order, si.isFeatured as item_featured,
            v.id as video_id, v.title as video_title, v.cloudflareVideoId, v.thumbnailUrl
@@ -152,9 +174,9 @@ export async function getSectionsByUserId(userId: string) {
     LEFT JOIN Video v ON si.videoId = v.id
     WHERE s.userId = ?
     ORDER BY s.order ASC, si.order ASC
-  `)
+  `
   
-  const result = await stmt.bind(userId).all()
+  const result = await db.query(sql, [userId])
   
   // Group results by section
   const sectionsMap = new Map()
@@ -200,16 +222,15 @@ export async function createSection(data: {
   const sectionId = generateId()
   
   // Get max order
-  const maxOrderStmt = db.prepare('SELECT MAX("order") as maxOrder FROM Section WHERE userId = ?')
-  const maxOrderResult = await maxOrderStmt.bind(data.userId).first() as any
-  const order = (maxOrderResult?.maxOrder || 0) + 1
+  const maxOrderResult = await db.query('SELECT MAX("order") as maxOrder FROM Section WHERE userId = ?', [data.userId])
+  const order = (maxOrderResult.results[0]?.maxOrder || 0) + 1
   
-  const stmt = db.prepare(`
+  const sql = `
     INSERT INTO Section (id, title, slug, description, isActive, "order", createdAt, updatedAt, userId)
     VALUES (?, ?, ?, ?, true, ?, datetime('now'), datetime('now'), ?)
-  `)
+  `
   
-  await stmt.bind(sectionId, data.title, data.slug, data.description || null, order, data.userId).run()
+  await db.query(sql, [sectionId, data.title, data.slug, data.description || null, order, data.userId])
   return sectionId
 }
 
@@ -219,16 +240,15 @@ export async function addVideoToSection(sectionId: string, videoId: string, isFe
   const itemId = generateId()
   
   // Get max order for this section
-  const maxOrderStmt = db.prepare('SELECT MAX("order") as maxOrder FROM SectionItem WHERE sectionId = ?')
-  const maxOrderResult = await maxOrderStmt.bind(sectionId).first() as any
-  const order = (maxOrderResult?.maxOrder || 0) + 1
+  const maxOrderResult = await db.query('SELECT MAX("order") as maxOrder FROM SectionItem WHERE sectionId = ?', [sectionId])
+  const order = (maxOrderResult.results[0]?.maxOrder || 0) + 1
   
-  const stmt = db.prepare(`
+  const sql = `
     INSERT INTO SectionItem (id, "order", isFeatured, createdAt, updatedAt, sectionId, videoId)
     VALUES (?, ?, ?, datetime('now'), datetime('now'), ?, ?)
-  `)
+  `
   
-  await stmt.bind(itemId, order, isFeatured, sectionId, videoId).run()
+  await db.query(sql, [itemId, order, isFeatured, sectionId, videoId])
   return itemId
 }
 
@@ -239,22 +259,20 @@ export async function updateSectionItems(sectionId: string, items: Array<{
 }>) {
   const db = getD1Database()
   
-  const statements = items.map(item => {
-    const stmt = db.prepare(`
+  // Execute multiple queries sequentially (D1 REST API doesn't support batch)
+  for (const item of items) {
+    const sql = `
       UPDATE SectionItem 
       SET "order" = ?, isFeatured = ?, updatedAt = datetime('now')
       WHERE id = ? AND sectionId = ?
-    `)
-    return stmt.bind(item.order, item.isFeatured, item.id, sectionId)
-  })
-  
-  await db.batch(statements)
+    `
+    await db.query(sql, [item.order, item.isFeatured, item.id, sectionId])
+  }
 }
 
 export async function deleteSectionItem(itemId: string, sectionId: string) {
   const db = getD1Database()
-  const stmt = db.prepare('DELETE FROM SectionItem WHERE id = ? AND sectionId = ?')
-  return await stmt.bind(itemId, sectionId).run()
+  return await db.query('DELETE FROM SectionItem WHERE id = ? AND sectionId = ?', [itemId, sectionId])
 }
 
 // Utility function to generate IDs
