@@ -25,8 +25,8 @@ export async function POST(
 
     const db = getD1Database()
     
-    const sectionStmt = db.prepare('SELECT * FROM Section WHERE id = ? AND userId = ?')
-    const section = await sectionStmt.bind(resolvedParams.id, session.user.id).first()
+    const sectionResult = await db.query('SELECT * FROM Section WHERE id = ? AND userId = ?', [resolvedParams.id, session.user.id])
+    const section = sectionResult.results[0]
 
     if (!section) {
       return NextResponse.json(
@@ -35,8 +35,8 @@ export async function POST(
       )
     }
 
-    const videoStmt = db.prepare('SELECT * FROM Video WHERE id = ? AND userId = ?')
-    const video = await videoStmt.bind(videoId, session.user.id).first()
+    const videoResult = await db.query('SELECT * FROM Video WHERE id = ? AND userId = ?', [videoId, session.user.id])
+    const video = videoResult.results[0]
 
     if (!video) {
       return NextResponse.json(
@@ -45,8 +45,8 @@ export async function POST(
       )
     }
 
-    const existingStmt = db.prepare('SELECT * FROM SectionItem WHERE sectionId = ? AND videoId = ?')
-    const existingItem = await existingStmt.bind(resolvedParams.id, videoId).first()
+    const existingResult = await db.query('SELECT * FROM SectionItem WHERE sectionId = ? AND videoId = ?', [resolvedParams.id, videoId])
+    const existingItem = existingResult.results[0]
 
     if (existingItem) {
       return NextResponse.json(
@@ -91,8 +91,8 @@ export async function PUT(
 
     const db = getD1Database()
     
-    const sectionStmt = db.prepare('SELECT * FROM Section WHERE id = ? AND userId = ?')
-    const section = await sectionStmt.bind(resolvedParams.id, session.user.id).first()
+    const sectionResult = await db.query('SELECT * FROM Section WHERE id = ? AND userId = ?', [resolvedParams.id, session.user.id])
+    const section = sectionResult.results[0]
 
     if (!section) {
       return NextResponse.json(
@@ -107,15 +107,14 @@ export async function PUT(
       isFeatured: item.isFeatured || false
     })))
 
-    const updatedItemsStmt = db.prepare(`
+    const updatedItemsResult = await db.query(`
       SELECT si.*, v.title, v.cloudflareVideoId, v.thumbnailUrl
       FROM SectionItem si
       JOIN Video v ON si.videoId = v.id
       WHERE si.sectionId = ?
       ORDER BY si."order" ASC
-    `)
-    const result = await updatedItemsStmt.bind(resolvedParams.id).all()
-    const updatedItems = result.results
+    `, [resolvedParams.id])
+    const updatedItems = updatedItemsResult.results
 
     return NextResponse.json(updatedItems)
   } catch (error) {

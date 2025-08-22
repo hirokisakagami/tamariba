@@ -39,8 +39,8 @@ export async function POST(request: NextRequest) {
     }
 
     const db = getD1Database()
-    const existingStmt = db.prepare('SELECT * FROM Section WHERE slug = ?')
-    const existingSection = await existingStmt.bind(slug).first()
+    const existingResult = await db.query('SELECT * FROM Section WHERE slug = ?', [slug])
+    const existingSection = existingResult.results[0]
 
     if (existingSection) {
       return NextResponse.json(

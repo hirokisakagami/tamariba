@@ -17,8 +17,8 @@ export async function DELETE(
 
     const db = getD1Database()
     
-    const sectionStmt = db.prepare('SELECT * FROM Section WHERE id = ? AND userId = ?')
-    const section = await sectionStmt.bind(resolvedParams.id, session.user.id).first()
+    const sectionResult = await db.query('SELECT * FROM Section WHERE id = ? AND userId = ?', [resolvedParams.id, session.user.id])
+    const section = sectionResult.results[0]
 
     if (!section) {
       return NextResponse.json(
