@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { deleteVideo, updateVideo, getD1Database } from '@/lib/d1'
 import { deleteStreamVideo } from '@/lib/cloudflare'
+import { toD1Like } from "@/lib/d1-adapter"
 
 export async function DELETE(
   request: NextRequest,
@@ -16,7 +17,8 @@ export async function DELETE(
 
     const resolvedParams = await params
 
-    const db = getD1Database()
+    const rawDb = getD1Database()
+    const db = toD1Like(rawDb)
     const videoStmt = db.prepare('SELECT * FROM Video WHERE id = ? AND userId = ?')
     const video = await videoStmt.bind(resolvedParams.id, session.user.id).first() as any
 

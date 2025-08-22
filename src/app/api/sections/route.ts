@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getSectionsByUserId, createSection, getD1Database } from '@/lib/d1'
+import { toD1Like } from "@/lib/d1-adapter"
 
 export async function GET() {
   try {
@@ -38,7 +39,8 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const db = getD1Database()
+    const rawDb = getD1Database()
+    const db = toD1Like(rawDb)
     const existingStmt = db.prepare('SELECT * FROM Section WHERE slug = ?')
     const existingSection = await existingStmt.bind(slug).first()
 

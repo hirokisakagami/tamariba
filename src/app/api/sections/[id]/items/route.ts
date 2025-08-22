@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { addVideoToSection, updateSectionItems, getD1Database } from '@/lib/d1'
+import { toD1Like } from "@/lib/d1-adapter"
 
 export async function POST(
   request: NextRequest,
@@ -23,7 +24,8 @@ export async function POST(
       )
     }
 
-    const db = getD1Database()
+    const rawDb = getD1Database()
+    const db = toD1Like(rawDb)
     
     const sectionStmt = db.prepare('SELECT * FROM Section WHERE id = ? AND userId = ?')
     const section = await sectionStmt.bind(resolvedParams.id, session.user.id).first()
@@ -89,7 +91,8 @@ export async function PUT(
       )
     }
 
-    const db = getD1Database()
+    const rawDb = getD1Database()
+    const db = toD1Like(rawDb)
     
     const sectionStmt = db.prepare('SELECT * FROM Section WHERE id = ? AND userId = ?')
     const section = await sectionStmt.bind(resolvedParams.id, session.user.id).first()
