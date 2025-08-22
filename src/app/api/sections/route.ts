@@ -39,8 +39,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const rawDb = getD1Database()
-    const db = toD1Like(rawDb)
+    const db = toD1Like(getD1Database() as any)
     const existingStmt = db.prepare('SELECT * FROM Section WHERE slug = ?')
     const existingSection = await existingStmt.bind(slug).first()
 

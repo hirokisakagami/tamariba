@@ -17,8 +17,7 @@ export async function DELETE(
 
     const resolvedParams = await params
 
-    const rawDb = getD1Database()
-    const db = toD1Like(rawDb)
+    const db = toD1Like(getD1Database() as any)
     const videoStmt = db.prepare('SELECT * FROM Video WHERE id = ? AND userId = ?')
     const video = await videoStmt.bind(resolvedParams.id, session.user.id).first() as any
 

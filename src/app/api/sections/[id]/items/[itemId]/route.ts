@@ -16,8 +16,7 @@ export async function DELETE(
 
     const resolvedParams = await params
 
-    const rawDb = getD1Database()
-    const db = toD1Like(rawDb)
+    const db = toD1Like(getD1Database() as any)
     
     const sectionStmt = db.prepare('SELECT * FROM Section WHERE id = ? AND userId = ?')
     const section = await sectionStmt.bind(resolvedParams.id, session.user.id).first()

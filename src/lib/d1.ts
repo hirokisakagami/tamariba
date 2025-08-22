@@ -1,5 +1,6 @@
 import { createClient } from '@cloudflare/d1'
 import type { D1Database } from '@cloudflare/workers-types'
+import { toD1Like } from './d1-adapter'
 
 export function getD1Database(): D1Database {
   const db = createClient({
@@ -12,7 +13,7 @@ export function getD1Database(): D1Database {
 
 // User management functions
 export async function createUser(email: string, password: string, name: string, role: string = 'USER') {
-  const db = getD1Database()
+  const db = toD1Like(getD1Database() as any)
   const userId = generateId()
   
   const stmt = db.prepare(`
@@ -25,13 +26,13 @@ export async function createUser(email: string, password: string, name: string, 
 }
 
 export async function getUserByEmail(email: string) {
-  const db = getD1Database()
+  const db = toD1Like(getD1Database() as any)
   const stmt = db.prepare('SELECT * FROM User WHERE email = ?')
   return await stmt.bind(email).first()
 }
 
 export async function getUserById(id: string) {
-  const db = getD1Database()
+  const db = toD1Like(getD1Database() as any)
   const stmt = db.prepare('SELECT * FROM User WHERE id = ?')
   return await stmt.bind(id).first()
 }
@@ -45,7 +46,7 @@ export async function createVideo(data: {
   duration?: number
   userId: string
 }) {
-  const db = getD1Database()
+  const db = toD1Like(getD1Database() as any)
   const videoId = generateId()
   
   const stmt = db.prepare(`
@@ -67,14 +68,14 @@ export async function createVideo(data: {
 }
 
 export async function getVideosByUserId(userId: string) {
-  const db = getD1Database()
+  const db = toD1Like(getD1Database() as any)
   const stmt = db.prepare('SELECT * FROM Video WHERE userId = ? ORDER BY createdAt DESC')
   const result = await stmt.bind(userId).all()
   return result.results
 }
 
 export async function deleteVideo(id: string, userId: string) {
-  const db = getD1Database()
+  const db = toD1Like(getD1Database() as any)
   const stmt = db.prepare('DELETE FROM Video WHERE id = ? AND userId = ?')
   return await stmt.bind(id, userId).run()
 }
@@ -84,7 +85,7 @@ export async function updateVideo(id: string, userId: string, data: Partial<{
   description: string
   status: string
 }>) {
-  const db = getD1Database()
+  const db = toD1Like(getD1Database() as any)
   
   const updates = []
   const values = []
@@ -111,7 +112,7 @@ export async function updateVideo(id: string, userId: string, data: Partial<{
 
 // Section management functions
 export async function getSectionsByUserId(userId: string) {
-  const db = getD1Database()
+  const db = toD1Like(getD1Database() as any)
   const sql = `
     SELECT s.*, 
            si.id as item_id, si.order as item_order, si.isFeatured as item_featured,
@@ -166,7 +167,7 @@ export async function createSection(data: {
   description?: string
   userId: string
 }) {
-  const db = getD1Database()
+  const db = toD1Like(getD1Database() as any)
   const sectionId = generateId()
   
   // Get max order
@@ -185,7 +186,7 @@ export async function createSection(data: {
 
 // Section Item management
 export async function addVideoToSection(sectionId: string, videoId: string, isFeatured: boolean = false) {
-  const db = getD1Database()
+  const db = toD1Like(getD1Database() as any)
   const itemId = generateId()
   
   // Get max order for this section
@@ -207,7 +208,7 @@ export async function updateSectionItems(sectionId: string, items: Array<{
   order: number
   isFeatured: boolean
 }>) {
-  const db = getD1Database()
+  const db = toD1Like(getD1Database() as any)
   
   const statements = items.map(item => {
     const stmt = db.prepare(`
@@ -222,7 +223,7 @@ export async function updateSectionItems(sectionId: string, items: Array<{
 }
 
 export async function deleteSectionItem(itemId: string, sectionId: string) {
-  const db = getD1Database()
+  const db = toD1Like(getD1Database() as any)
   const stmt = db.prepare('DELETE FROM SectionItem WHERE id = ? AND sectionId = ?')
   return await stmt.bind(itemId, sectionId).run()
 }
