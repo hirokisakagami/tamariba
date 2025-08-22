@@ -1,146 +1,13 @@
-// Cloudflare D1 client compatible with prepare/bind/first API
+import { createClient } from '@cloudflare/d1'
+import type { D1Database } from '@cloudflare/workers-types'
 
-interface D1PreparedStatement {
-  bind(...values: unknown[]): D1PreparedStatement
-  first<T = unknown>(colName?: string): Promise<T | null>
-  run(): Promise<D1Result>
-  all<T = unknown>(): Promise<D1Result<T>>
-  raw<T = unknown>(): Promise<T[]>
-}
-
-interface D1Result<T = unknown> {
-  results: T[]
-  success: boolean
-  meta: {
-    duration: number
-    size_after: number
-    rows_read: number
-    rows_written: number
-  }
-}
-
-class D1HttpClient {
-  private apiUrl: string
-  private headers: Record<string, string>
-
-  constructor() {
-    const accountId = process.env.CLOUDFLARE_ACCOUNT_ID
-    const databaseId = process.env.CLOUDFLARE_D1_DATABASE_ID
-    const apiToken = process.env.CLOUDFLARE_API_TOKEN
-    const email = process.env.CLOUDFLARE_EMAIL
-
-    if (!accountId || !databaseId || !apiToken) {
-      throw new Error('Missing required Cloudflare environment variables')
-    }
-
-    this.apiUrl = `https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${databaseId}/query`
-    
-    if (email) {
-      // Global API Key
-      this.headers = {
-        'Content-Type': 'application/json',
-        'X-Auth-Email': email,
-        'X-Auth-Key': apiToken,
-      }
-    } else {
-      // API Token
-      this.headers = {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiToken}`,
-      }
-    }
-  }
-
-  prepare(sql: string): D1PreparedStatement {
-    return new D1HttpPreparedStatement(sql, this.apiUrl, this.headers)
-  }
-
-  async exec(sql: string) {
-    return this.prepare(sql).run()
-  }
-
-  async batch(statements: D1PreparedStatement[]) {
-    // Execute sequentially for HTTP API
-    const results = []
-    for (const stmt of statements) {
-      results.push(await stmt.run())
-    }
-    return results
-  }
-}
-
-class D1HttpPreparedStatement implements D1PreparedStatement {
-  private sql: string
-  private params: unknown[] = []
-  private apiUrl: string
-  private headers: Record<string, string>
-
-  constructor(sql: string, apiUrl: string, headers: Record<string, string>) {
-    this.sql = sql
-    this.apiUrl = apiUrl
-    this.headers = headers
-  }
-
-  bind(...values: unknown[]): D1PreparedStatement {
-    this.params = values
-    return this
-  }
-
-  async first<T = unknown>(colName?: string): Promise<T | null> {
-    const result = await this.execute()
-    return result.results[0] || null
-  }
-
-  async run(): Promise<D1Result> {
-    return this.execute()
-  }
-
-  async all<T = unknown>(): Promise<D1Result<T>> {
-    return this.execute<T>()
-  }
-
-  async raw<T = unknown>(): Promise<T[]> {
-    const result = await this.execute<T>()
-    return result.results
-  }
-
-  private async execute<T = unknown>(): Promise<D1Result<T>> {
-    try {
-      const response = await fetch(this.apiUrl, {
-        method: 'POST',
-        headers: this.headers,
-        body: JSON.stringify({
-          sql: this.sql,
-          params: this.params,
-        }),
-      })
-
-      if (!response.ok) {
-        throw new Error(`D1 API error: ${response.status} ${response.statusText}`)
-      }
-
-      const data = await response.json()
-      if (!data.success) {
-        throw new Error(`D1 query failed: ${JSON.stringify(data.errors)}`)
-      }
-
-      return data.result[0]
-    } catch (error) {
-      console.error('D1 query error:', error)
-      throw error
-    }
-  }
-}
-
-// Get D1 database instance
-export function getD1Database() {
-  // In Cloudflare Workers/Pages environment
-  if (typeof (globalThis as any).DB !== 'undefined') {
-    return (globalThis as any).DB
-  }
-  
-  // For Vercel/Node.js environment
-  return new D1HttpClient()
+export function getD1Database(): D1Database {
+  const db = createClient({
+    accountId: process.env.CF_ACCOUNT_ID!,
+    databaseId: process.env.CF_D1_DATABASE_ID!,
+    token: process.env.CF_API_TOKEN!,
+  })
+  return db
 }
 
 // User management functions
@@ -256,7 +123,8 @@ export async function getSectionsByUserId(userId: string) {
     ORDER BY s.order ASC, si.order ASC
   `
   
-  const result = await db.query(sql, [userId])
+  const stmt = db.prepare(sql)
+  const result = await stmt.bind(userId).all()
   
   // Group results by section
   const sectionsMap = new Map()
@@ -302,15 +170,16 @@ export async function createSection(data: {
   const sectionId = generateId()
   
   // Get max order
-  const maxOrderResult = await db.query('SELECT MAX("order") as maxOrder FROM Section WHERE userId = ?', [data.userId])
-  const order = (maxOrderResult.results[0]?.maxOrder || 0) + 1
+  const maxOrderStmt = db.prepare('SELECT MAX("order") as maxOrder FROM Section WHERE userId = ?')
+  const maxOrderResult = await maxOrderStmt.bind(data.userId).first() as any
+  const order = (maxOrderResult?.maxOrder || 0) + 1
   
-  const sql = `
+  const stmt = db.prepare(`
     INSERT INTO Section (id, title, slug, description, isActive, "order", createdAt, updatedAt, userId)
     VALUES (?, ?, ?, ?, true, ?, datetime('now'), datetime('now'), ?)
-  `
+  `)
   
-  await db.query(sql, [sectionId, data.title, data.slug, data.description || null, order, data.userId])
+  await stmt.bind(sectionId, data.title, data.slug, data.description || null, order, data.userId).run()
   return sectionId
 }
 
@@ -320,15 +189,16 @@ export async function addVideoToSection(sectionId: string, videoId: string, isFe
   const itemId = generateId()
   
   // Get max order for this section
-  const maxOrderResult = await db.query('SELECT MAX("order") as maxOrder FROM SectionItem WHERE sectionId = ?', [sectionId])
-  const order = (maxOrderResult.results[0]?.maxOrder || 0) + 1
+  const maxOrderStmt = db.prepare('SELECT MAX("order") as maxOrder FROM SectionItem WHERE sectionId = ?')
+  const maxOrderResult = await maxOrderStmt.bind(sectionId).first() as any
+  const order = (maxOrderResult?.maxOrder || 0) + 1
   
-  const sql = `
+  const stmt = db.prepare(`
     INSERT INTO SectionItem (id, "order", isFeatured, createdAt, updatedAt, sectionId, videoId)
     VALUES (?, ?, ?, datetime('now'), datetime('now'), ?, ?)
-  `
+  `)
   
-  await db.query(sql, [itemId, order, isFeatured, sectionId, videoId])
+  await stmt.bind(itemId, order, isFeatured, sectionId, videoId).run()
   return itemId
 }
 
@@ -339,20 +209,22 @@ export async function updateSectionItems(sectionId: string, items: Array<{
 }>) {
   const db = getD1Database()
   
-  // Execute multiple queries sequentially (D1 REST API doesn't support batch)
-  for (const item of items) {
-    const sql = `
+  const statements = items.map(item => {
+    const stmt = db.prepare(`
       UPDATE SectionItem 
       SET "order" = ?, isFeatured = ?, updatedAt = datetime('now')
       WHERE id = ? AND sectionId = ?
-    `
-    await db.query(sql, [item.order, item.isFeatured, item.id, sectionId])
-  }
+    `)
+    return stmt.bind(item.order, item.isFeatured, item.id, sectionId)
+  })
+  
+  await db.batch(statements)
 }
 
 export async function deleteSectionItem(itemId: string, sectionId: string) {
   const db = getD1Database()
-  return await db.query('DELETE FROM SectionItem WHERE id = ? AND sectionId = ?', [itemId, sectionId])
+  const stmt = db.prepare('DELETE FROM SectionItem WHERE id = ? AND sectionId = ?')
+  return await stmt.bind(itemId, sectionId).run()
 }
 
 // Utility function to generate IDs
