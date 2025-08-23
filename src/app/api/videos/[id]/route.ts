@@ -1,25 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
 import { deleteVideo, updateVideo, getD1Database } from '@/lib/d1'
 import { deleteStreamVideo } from '@/lib/cloudflare'
 import { toD1Like } from "@/lib/d1-adapter"
+
+// Fixed user ID for no-auth mode
+const ADMIN_USER_ID = 'admin-user'
 
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await getServerSession(authOptions)
-    if (!session) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
     const resolvedParams = await params
 
     const db = toD1Like(getD1Database() as any)
     const videoStmt = db.prepare('SELECT * FROM Video WHERE id = ? AND userId = ?')
-    const video = await videoStmt.bind(resolvedParams.id, session.user.id).first() as any
+    const video = await videoStmt.bind(resolvedParams.id, ADMIN_USER_ID).first() as any
 
     if (!video) {
       return NextResponse.json({ error: 'Video not found' }, { status: 404 })
@@ -27,7 +23,7 @@ export async function DELETE(
 
     await deleteStreamVideo(video.cloudflareVideoId)
 
-    await deleteVideo(resolvedParams.id, session.user.id)
+    await deleteVideo(resolvedParams.id, ADMIN_USER_ID)
 
     return NextResponse.json({ success: true })
   } catch (error) {
@@ -44,15 +40,10 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await getServerSession(authOptions)
-    if (!session) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
     const resolvedParams = await params
     const { title, description, status } = await request.json()
 
-    await updateVideo(resolvedParams.id, session.user.id, {
+    await updateVideo(resolvedParams.id, ADMIN_USER_ID, {
       ...(title !== undefined && { title }),
       ...(description !== undefined && { description }),
       ...(status !== undefined && { status }),

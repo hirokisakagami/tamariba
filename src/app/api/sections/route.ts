@@ -1,17 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
 import { getSectionsByUserId, createSection, getD1Database } from '@/lib/d1'
 import { toD1Like } from "@/lib/d1-adapter"
 
+// Fixed user ID for no-auth mode
+const ADMIN_USER_ID = 'admin-user'
+
 export async function GET() {
   try {
-    const session = await getServerSession(authOptions)
-    if (!session) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const sections = await getSectionsByUserId(session.user.id)
+    const sections = await getSectionsByUserId(ADMIN_USER_ID)
 
     return NextResponse.json(sections)
   } catch (error) {
@@ -25,11 +21,6 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions)
-    if (!session) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
     const { title, slug, description } = await request.json()
 
     if (!title || !slug) {
@@ -54,7 +45,7 @@ export async function POST(request: NextRequest) {
       title,
       slug,
       description,
-      userId: session.user.id,
+      userId: ADMIN_USER_ID,
     })
 
     const section = { id: sectionId, title, slug, description }

@@ -1,25 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
 import { deleteSectionItem, getD1Database } from '@/lib/d1'
 import { toD1Like } from "@/lib/d1-adapter"
+
+// Fixed user ID for no-auth mode
+const ADMIN_USER_ID = 'admin-user'
 
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; itemId: string }> }
 ) {
   try {
-    const session = await getServerSession(authOptions)
-    if (!session) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
     const resolvedParams = await params
 
     const db = toD1Like(getD1Database() as any)
     
     const sectionStmt = db.prepare('SELECT * FROM Section WHERE id = ? AND userId = ?')
-    const section = await sectionStmt.bind(resolvedParams.id, session.user.id).first()
+    const section = await sectionStmt.bind(resolvedParams.id, ADMIN_USER_ID).first()
 
     if (!section) {
       return NextResponse.json(

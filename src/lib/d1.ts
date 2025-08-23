@@ -11,31 +11,7 @@ export function getD1Database(): D1Database {
   return db
 }
 
-// User management functions
-export async function createUser(email: string, password: string, name: string, role: string = 'USER') {
-  const db = toD1Like(getD1Database() as any)
-  const userId = generateId()
-  
-  const stmt = db.prepare(`
-    INSERT INTO User (id, email, password, name, role, createdAt, updatedAt)
-    VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))
-  `)
-  
-  await stmt.bind(userId, email, password, name, role).run()
-  return userId
-}
-
-export async function getUserByEmail(email: string) {
-  const db = toD1Like(getD1Database() as any)
-  const stmt = db.prepare('SELECT * FROM User WHERE email = ?')
-  return await stmt.bind(email).first()
-}
-
-export async function getUserById(id: string) {
-  const db = toD1Like(getD1Database() as any)
-  const stmt = db.prepare('SELECT * FROM User WHERE id = ?')
-  return await stmt.bind(id).first()
-}
+// User management functions removed - no auth mode
 
 // Video management functions
 export async function createVideo(data: {

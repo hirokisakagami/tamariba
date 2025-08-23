@@ -1,19 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
 import { addVideoToSection, updateSectionItems, getD1Database } from '@/lib/d1'
 import { toD1Like } from "@/lib/d1-adapter"
+
+// Fixed user ID for no-auth mode
+const ADMIN_USER_ID = 'admin-user'
 
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await getServerSession(authOptions)
-    if (!session) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
     const resolvedParams = await params
     const { videoId, isFeatured = false } = await request.json()
 
@@ -27,7 +23,7 @@ export async function POST(
     const db = toD1Like(getD1Database() as any)
     
     const sectionStmt = db.prepare('SELECT * FROM Section WHERE id = ? AND userId = ?')
-    const section = await sectionStmt.bind(resolvedParams.id, session.user.id).first()
+    const section = await sectionStmt.bind(resolvedParams.id, ADMIN_USER_ID).first()
 
     if (!section) {
       return NextResponse.json(
@@ -37,7 +33,7 @@ export async function POST(
     }
 
     const videoStmt = db.prepare('SELECT * FROM Video WHERE id = ? AND userId = ?')
-    const video = await videoStmt.bind(videoId, session.user.id).first()
+    const video = await videoStmt.bind(videoId, ADMIN_USER_ID).first()
 
     if (!video) {
       return NextResponse.json(
@@ -75,11 +71,6 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await getServerSession(authOptions)
-    if (!session) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
     const resolvedParams = await params
     const { items } = await request.json()
 
@@ -93,7 +84,7 @@ export async function PUT(
     const db = toD1Like(getD1Database() as any)
     
     const sectionStmt = db.prepare('SELECT * FROM Section WHERE id = ? AND userId = ?')
-    const section = await sectionStmt.bind(resolvedParams.id, session.user.id).first()
+    const section = await sectionStmt.bind(resolvedParams.id, ADMIN_USER_ID).first()
 
     if (!section) {
       return NextResponse.json(

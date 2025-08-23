@@ -1,17 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
 import { getVideosByUserId, createVideo } from '@/lib/d1'
 import { uploadVideoToStream, getThumbnailUrl } from '@/lib/cloudflare'
 
+// Fixed user ID for no-auth mode
+const ADMIN_USER_ID = 'admin-user'
+
 export async function GET() {
   try {
-    const session = await getServerSession(authOptions)
-    if (!session) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const videos = await getVideosByUserId(session.user.id)
+    const videos = await getVideosByUserId(ADMIN_USER_ID)
 
     return NextResponse.json(videos)
   } catch (error) {
@@ -25,11 +21,6 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions)
-    if (!session) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
     const formData = await request.formData()
     const file = formData.get('file') as File
     const title = formData.get('title') as string
@@ -47,7 +38,7 @@ export async function POST(request: NextRequest) {
       cloudflareVideoId: cloudflareVideo.uid,
       thumbnailUrl: getThumbnailUrl(cloudflareVideo.uid),
       duration: cloudflareVideo.duration || undefined,
-      userId: session.user.id,
+      userId: ADMIN_USER_ID,
     })
 
     const video = { id: videoId, title: title || file.name, cloudflareVideoId: cloudflareVideo.uid }
