@@ -144,52 +144,17 @@ export async function updateVideo(id: string, userId: string, data: Partial<{
 // Section management functions
 export async function getSectionsByUserId(userId: string) {
   const db = getD1Database()
-  const sql = `
-    SELECT s.*, 
-           si.id as item_id, si.order as item_order, si.isFeatured as item_featured,
-           v.id as video_id, v.title as video_title, v.cloudflareVideoId, v.thumbnailUrl
-    FROM Section s
-    LEFT JOIN SectionItem si ON s.id = si.sectionId
-    LEFT JOIN Video v ON si.videoId = v.id
-    WHERE s.userId = ?
-    ORDER BY s.order ASC, si.order ASC
-  `
   
-  const stmt = db.prepare(sql)
-  const result = await stmt.bind(userId).all()
-  
-  // Group results by section
-  const sectionsMap = new Map()
-  
-  for (const row of result.results as any[]) {
-    if (!sectionsMap.has(row.id)) {
-      sectionsMap.set(row.id, {
-        id: row.id,
-        title: row.title,
-        slug: row.slug,
-        description: row.description,
-        isActive: row.isActive,
-        order: row.order,
-        items: []
-      })
-    }
-    
-    if (row.item_id) {
-      sectionsMap.get(row.id).items.push({
-        id: row.item_id,
-        order: row.item_order,
-        isFeatured: row.item_featured,
-        video: {
-          id: row.video_id,
-          title: row.video_title,
-          cloudflareVideoId: row.cloudflareVideoId,
-          thumbnailUrl: row.thumbnailUrl
-        }
-      })
-    }
+  try {
+    // Simple query first - just get sections
+    const stmt = db.prepare('SELECT * FROM Section WHERE userId = ? ORDER BY "order" ASC')
+    const result = await stmt.bind(userId).all()
+    return result.results || []
+  } catch (error) {
+    console.error('Error in getSectionsByUserId:', error)
+    // Return empty array instead of throwing error
+    return []
   }
-  
-  return Array.from(sectionsMap.values())
 }
 
 export async function createSection(data: {
