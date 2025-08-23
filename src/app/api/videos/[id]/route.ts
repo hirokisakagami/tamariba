@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { deleteVideo, updateVideo, getD1Database } from '@/lib/d1'
 import { deleteStreamVideo } from '@/lib/cloudflare'
-import { toD1Like } from "@/lib/d1-adapter"
 
 // Fixed user ID for no-auth mode
 const ADMIN_USER_ID = 'admin-user'
@@ -13,7 +12,7 @@ export async function DELETE(
   try {
     const resolvedParams = await params
 
-    const db = toD1Like(getD1Database() as any)
+    const db = getD1Database()
     const videoStmt = db.prepare('SELECT * FROM Video WHERE id = ? AND userId = ?')
     const video = await videoStmt.bind(resolvedParams.id, ADMIN_USER_ID).first() as any
 

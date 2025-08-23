@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSectionsByUserId, createSection, getD1Database } from '@/lib/d1'
-import { toD1Like } from "@/lib/d1-adapter"
 
 // Fixed user ID for no-auth mode
 const ADMIN_USER_ID = 'admin-user'
@@ -30,7 +29,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const db = toD1Like(getD1Database() as any)
+    const db = getD1Database()
     const existingStmt = db.prepare('SELECT * FROM Section WHERE slug = ?')
     const existingSection = await existingStmt.bind(slug).first()
 

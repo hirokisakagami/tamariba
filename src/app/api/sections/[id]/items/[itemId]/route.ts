@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { deleteSectionItem, getD1Database } from '@/lib/d1'
-import { toD1Like } from "@/lib/d1-adapter"
 
 // Fixed user ID for no-auth mode
 const ADMIN_USER_ID = 'admin-user'
@@ -12,7 +11,7 @@ export async function DELETE(
   try {
     const resolvedParams = await params
 
-    const db = toD1Like(getD1Database() as any)
+    const db = getD1Database()
     
     const sectionStmt = db.prepare('SELECT * FROM Section WHERE id = ? AND userId = ?')
     const section = await sectionStmt.bind(resolvedParams.id, ADMIN_USER_ID).first()

@@ -1,14 +1,69 @@
-import { createClient } from '@cloudflare/d1'
-import type { D1Database } from '@cloudflare/workers-types'
-import { toD1Like } from './d1-adapter'
+import { toD1Like, type D1Like } from './d1-adapter'
 
-export function getD1Database(): D1Database {
-  const db = createClient({
-    accountId: process.env.CF_ACCOUNT_ID!,
-    databaseId: process.env.CF_D1_DATABASE_ID!,
-    token: process.env.CF_API_TOKEN!,
-  })
-  return db
+// Cloudflare D1 REST API client
+class D1RestClient {
+  private apiUrl: string
+  private headers: Record<string, string>
+
+  constructor() {
+    const accountId = process.env.CF_ACCOUNT_ID!
+    const databaseId = process.env.CF_D1_DATABASE_ID!
+    const apiToken = process.env.CF_API_TOKEN!
+    const email = process.env.CF_EMAIL
+
+    if (!accountId || !databaseId || !apiToken) {
+      throw new Error('Missing required Cloudflare environment variables')
+    }
+
+    this.apiUrl = `https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${databaseId}/query`
+    
+    if (email) {
+      // Global API Key
+      this.headers = {
+        'Content-Type': 'application/json',
+        'X-Auth-Email': email,
+        'X-Auth-Key': apiToken,
+      }
+    } else {
+      // API Token
+      this.headers = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiToken}`,
+      }
+    }
+  }
+
+  async exec(sql: string, params: any[] = []) {
+    try {
+      const response = await fetch(this.apiUrl, {
+        method: 'POST',
+        headers: this.headers,
+        body: JSON.stringify({
+          sql,
+          params,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error(`D1 API error: ${response.status} ${response.statusText}`)
+      }
+
+      const data = await response.json()
+      if (!data.success) {
+        throw new Error(`D1 query failed: ${JSON.stringify(data.errors)}`)
+      }
+
+      return data.result[0]
+    } catch (error) {
+      console.error('D1 query error:', error)
+      throw error
+    }
+  }
+}
+
+export function getD1Database(): D1Like {
+  const rawClient = new D1RestClient()
+  return toD1Like(rawClient)
 }
 
 // User management functions removed - no auth mode
@@ -22,7 +77,7 @@ export async function createVideo(data: {
   duration?: number
   userId: string
 }) {
-  const db = toD1Like(getD1Database() as any)
+  const db = getD1Database()
   const videoId = generateId()
   
   const stmt = db.prepare(`
@@ -44,14 +99,14 @@ export async function createVideo(data: {
 }
 
 export async function getVideosByUserId(userId: string) {
-  const db = toD1Like(getD1Database() as any)
+  const db = getD1Database()
   const stmt = db.prepare('SELECT * FROM Video WHERE userId = ? ORDER BY createdAt DESC')
   const result = await stmt.bind(userId).all()
   return result.results
 }
 
 export async function deleteVideo(id: string, userId: string) {
-  const db = toD1Like(getD1Database() as any)
+  const db = getD1Database()
   const stmt = db.prepare('DELETE FROM Video WHERE id = ? AND userId = ?')
   return await stmt.bind(id, userId).run()
 }
@@ -61,7 +116,7 @@ export async function updateVideo(id: string, userId: string, data: Partial<{
   description: string
   status: string
 }>) {
-  const db = toD1Like(getD1Database() as any)
+  const db = getD1Database()
   
   const updates = []
   const values = []
@@ -88,7 +143,7 @@ export async function updateVideo(id: string, userId: string, data: Partial<{
 
 // Section management functions
 export async function getSectionsByUserId(userId: string) {
-  const db = toD1Like(getD1Database() as any)
+  const db = getD1Database()
   const sql = `
     SELECT s.*, 
            si.id as item_id, si.order as item_order, si.isFeatured as item_featured,
@@ -143,7 +198,7 @@ export async function createSection(data: {
   description?: string
   userId: string
 }) {
-  const db = toD1Like(getD1Database() as any)
+  const db = getD1Database()
   const sectionId = generateId()
   
   // Get max order
@@ -162,7 +217,7 @@ export async function createSection(data: {
 
 // Section Item management
 export async function addVideoToSection(sectionId: string, videoId: string, isFeatured: boolean = false) {
-  const db = toD1Like(getD1Database() as any)
+  const db = getD1Database()
   const itemId = generateId()
   
   // Get max order for this section
@@ -184,22 +239,21 @@ export async function updateSectionItems(sectionId: string, items: Array<{
   order: number
   isFeatured: boolean
 }>) {
-  const db = toD1Like(getD1Database() as any)
+  const db = getD1Database()
   
-  const statements = items.map(item => {
+  // Execute multiple queries sequentially (D1 REST API doesn't support batch)
+  for (const item of items) {
     const stmt = db.prepare(`
       UPDATE SectionItem 
       SET "order" = ?, isFeatured = ?, updatedAt = datetime('now')
       WHERE id = ? AND sectionId = ?
     `)
-    return stmt.bind(item.order, item.isFeatured, item.id, sectionId)
-  })
-  
-  await db.batch(statements)
+    await stmt.bind(item.order, item.isFeatured, item.id, sectionId).run()
+  }
 }
 
 export async function deleteSectionItem(itemId: string, sectionId: string) {
-  const db = toD1Like(getD1Database() as any)
+  const db = getD1Database()
   const stmt = db.prepare('DELETE FROM SectionItem WHERE id = ? AND sectionId = ?')
   return await stmt.bind(itemId, sectionId).run()
 }
