@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getVideosByUserId, createVideo } from '@/lib/d1'
-import { uploadVideoToStream, getThumbnailUrl } from '@/lib/cloudflare'
+import { uploadVideoToStream, getThumbnailUrls } from '@/lib/cloudflare'
 
 // Fixed user ID for no-auth mode
 const ADMIN_USER_ID = 'admin-user'
@@ -32,11 +32,13 @@ export async function POST(request: NextRequest) {
 
     const cloudflareVideo = await uploadVideoToStream(file, title)
 
+    const thumbnailUrls = getThumbnailUrls(cloudflareVideo.uid)
+
     const videoId = await createVideo({
       title: title || file.name,
       description: description || undefined,
       cloudflareVideoId: cloudflareVideo.uid,
-      thumbnailUrl: getThumbnailUrl(cloudflareVideo.uid),
+      thumbnailUrl: thumbnailUrls.large,
       duration: cloudflareVideo.duration || undefined,
       userId: ADMIN_USER_ID,
     })

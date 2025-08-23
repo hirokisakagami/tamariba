@@ -29,8 +29,17 @@ export const getStreamUrl = (videoId: string) => {
   return `https://stream.cloudflare.com/${videoId}/manifest/video.m3u8`
 }
 
-export const getThumbnailUrl = (videoId: string, time = 0) => {
-  return `https://stream.cloudflare.com/${videoId}/thumbnails/thumbnail.jpg?time=${time}s`
+export const getThumbnailUrl = (videoId: string, time = 0, width = 320, height = 180) => {
+  return `https://stream.cloudflare.com/${videoId}/thumbnails/thumbnail.jpg?time=${time}s&width=${width}&height=${height}`
+}
+
+// Get multiple thumbnail options
+export const getThumbnailUrls = (videoId: string) => {
+  return {
+    small: getThumbnailUrl(videoId, 0, 320, 180),    // 小サムネイル
+    large: getThumbnailUrl(videoId, 0, 640, 360),    // 大サムネイル
+    featured: getThumbnailUrl(videoId, 0, 800, 450), // フィーチャー用
+  }
 }
 
 export const uploadVideoToStream = async (
@@ -42,9 +51,14 @@ export const uploadVideoToStream = async (
   const formData = new FormData()
   formData.append('file', videoFile)
 
-  if (title) {
-    formData.append('meta', JSON.stringify({ name: title }))
+  // Enhanced metadata with thumbnail settings
+  const metadata = {
+    name: title || videoFile.name,
+    // Request thumbnail generation at upload time
+    thumbnailTimestamp: 0, // Generate thumbnail at 0 seconds
   }
+  
+  formData.append('meta', JSON.stringify(metadata))
 
   const response = await fetch(url, {
     method: 'POST',
